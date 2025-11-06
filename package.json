@@ -10,13 +10,15 @@
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
-    "start": "npm run shell",
+    "start": "node ./start_render.js",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^4.0.0",
-    "firebase-admin": "11.11.1",
+    "axios": "^1.13.2",
+    "express": "^5.1.0",
+    "firebase-admin": "^11.11.1",
     "firebase-functions": "3.24.1"
   },
   "devDependencies": {
