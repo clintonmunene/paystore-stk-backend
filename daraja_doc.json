@@ -1,0 +1,28 @@
+﻿{
+  "name": "projects/my-application-63afa/databases/(default)/documents/app_config/daraja",
+  "fields": {
+    "paybill": {
+      "stringValue": "4187353"
+    },
+    "consumerSecret": {
+      "stringValue": "vwxfmCPqZAduZBvg6lZxG3VtbrSpavOPbvY1BXbs0ooZ2uwMb992xMd38C9sdTrT"
+    },
+    "stkurl": {
+      "stringValue": "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+    },
+    "oauthurl": {
+      "stringValue": "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+    },
+    "consumerKey": {
+      "stringValue": "EXMatUdw7RLa99gSAQwZd64ZzaTZ4G9pAB9ZwshthoGBbnKm"
+    },
+    "callbackurl": {
+      "stringValue": "https://us-central1-my-application-63afa.cloudfunctions.net/darajaCallback"
+    },
+    "passkey": {
+      "stringValue": "9b328947eddce9f40d0f9dae991609c69c40741528dd45e90591cb6630fab916"
+    }
+  },
+  "createTime": "2025-10-26T19:09:45.341657Z",
+  "updateTime": "2025-10-26T19:17:12.966738Z"
+}

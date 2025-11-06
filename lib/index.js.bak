@@ -1,0 +1,182 @@
+﻿"use strict";
+// functions/src/index.ts Ã¢â‚¬â€ Spark-plan friendly
+// Uses v2 HTTPS callables (single `req` param), no scheduler, runtime config for creds.
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.refreshCustomerInfo = exports.linkAndSyncAccount = void 0;
+const admin = __importStar(require("firebase-admin"));
+// We use v2 `onCall` & `HttpsError` so the handler receives a single request object.
+const https_1 = require("firebase-functions/v2/https");
+// If TypeScript ever complains about fetch in your environment, uncomment these lines:
+// import fetch from 'node-fetch';
+// (globalThis as any).fetch = fetch;
+admin.initializeApp();
+const db = admin.firestore();
+// ----- Runtime config (you already set these):
+// firebase functions:config:set oneisp.base="https://YOUR-ONEISP-BASE" oneisp.token="YOUR_LONG_BEARER_TOKEN"
+const cfg = (process && process.env && Object.keys(process.env).length) ? {} : {}; // replaced /* functions.config() removed for v2; use environment variables or Secret Manager */ (process.env || {}) -> use process.env or Firestore
+const ONE_ISP_BASE = (cfg.oneisp && cfg.oneisp.base) || '';
+const ONE_ISP_TOKEN = (cfg.oneisp && cfg.oneisp.token) || '';
+// ----- Helper to call One-ISP
+async function oneIspGet(path) {
+    if (!ONE_ISP_BASE || !ONE_ISP_TOKEN) {
+        throw new Error('One-ISP config missing. Run: firebase functions:config:set oneisp.base="..." oneisp.token="..."');
+    }
+    const url = `${ONE_ISP_BASE}${path}`;
+    const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${ONE_ISP_TOKEN}` },
+    });
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`One-ISP ${res.status} ${res.statusText} :: ${url} :: ${text}`);
+    }
+    return res.json();
+}
+// ----- Mappers (adapt to your exact One-ISP payload)
+function mapStats(accountNumber, stats) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+    return {
+        accountNumber,
+        expiryDate: String((_b = (_a = stats === null || stats === void 0 ? void 0 : stats.expiryDate) !== null && _a !== void 0 ? _a : stats === null || stats === void 0 ? void 0 : stats.expiresAt) !== null && _b !== void 0 ? _b : ''),
+        daysRemaining: Number((_d = (_c = stats === null || stats === void 0 ? void 0 : stats.remainingDays) !== null && _c !== void 0 ? _c : stats === null || stats === void 0 ? void 0 : stats.daysRemaining) !== null && _d !== void 0 ? _d : 0),
+        walletBalance: Number((_f = (_e = stats === null || stats === void 0 ? void 0 : stats.walletBalance) !== null && _e !== void 0 ? _e : stats === null || stats === void 0 ? void 0 : stats.wallet) !== null && _f !== void 0 ? _f : 0),
+        currentPackage: String((_h = (_g = stats === null || stats === void 0 ? void 0 : stats.currentPackage) !== null && _g !== void 0 ? _g : stats === null || stats === void 0 ? void 0 : stats.package) !== null && _h !== void 0 ? _h : ''),
+        status: String((_j = stats === null || stats === void 0 ? void 0 : stats.status) !== null && _j !== void 0 ? _j : 'Active'),
+        usage: {
+            downloadGB: Number((_m = (_l = (_k = stats === null || stats === void 0 ? void 0 : stats.usage) === null || _k === void 0 ? void 0 : _k.downloadGB) !== null && _l !== void 0 ? _l : stats === null || stats === void 0 ? void 0 : stats.downloadGB) !== null && _m !== void 0 ? _m : 0),
+            uploadGB: Number((_q = (_p = (_o = stats === null || stats === void 0 ? void 0 : stats.usage) === null || _o === void 0 ? void 0 : _o.uploadGB) !== null && _p !== void 0 ? _p : stats === null || stats === void 0 ? void 0 : stats.uploadGB) !== null && _q !== void 0 ? _q : 0),
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+}
+function mapLogItem(it) {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const when = (_c = (_b = (_a = it === null || it === void 0 ? void 0 : it.timestamp) !== null && _a !== void 0 ? _a : it === null || it === void 0 ? void 0 : it.time) !== null && _b !== void 0 ? _b : it === null || it === void 0 ? void 0 : it.createdAt) !== null && _c !== void 0 ? _c : null;
+    return {
+        type: String((_e = (_d = it === null || it === void 0 ? void 0 : it.type) !== null && _d !== void 0 ? _d : it === null || it === void 0 ? void 0 : it.action) !== null && _e !== void 0 ? _e : 'event'),
+        at: when
+            ? admin.firestore.Timestamp.fromDate(new Date(when))
+            : admin.firestore.FieldValue.serverTimestamp(),
+        details: String((_h = (_g = (_f = it === null || it === void 0 ? void 0 : it.details) !== null && _f !== void 0 ? _f : it === null || it === void 0 ? void 0 : it.note) !== null && _g !== void 0 ? _g : it === null || it === void 0 ? void 0 : it.description) !== null && _h !== void 0 ? _h : ''),
+    };
+}
+function mapQuickNote(it) {
+    var _a, _b, _c;
+    return {
+        title: String((_a = it === null || it === void 0 ? void 0 : it.title) !== null && _a !== void 0 ? _a : ''),
+        body: String((_c = (_b = it === null || it === void 0 ? void 0 : it.body) !== null && _b !== void 0 ? _b : it === null || it === void 0 ? void 0 : it.content) !== null && _c !== void 0 ? _c : ''),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+}
+// ----- Core sync: pull from One-ISP and write to Firestore
+async function syncCustomer(uid, customerId, accountNumber) {
+    // 1) Stats
+    const stats = await oneIspGet(`/api/isp/customers/${customerId}/statistics`);
+    const doc = mapStats(accountNumber !== null && accountNumber !== void 0 ? accountNumber : customerId, stats);
+    await db.collection('customers').doc(uid).set(doc, { merge: true });
+    // 2) Logs (optional)
+    try {
+        const logs = await oneIspGet(`/api/isp/customers/${customerId}/logs`);
+        if (Array.isArray(logs)) {
+            const batch = db.batch();
+            const coll = db.collection('customers').doc(uid).collection('logs');
+            logs.slice(0, 100).forEach((it) => {
+                var _a, _b, _c;
+                const id = ((_c = (_b = (_a = it.id) !== null && _a !== void 0 ? _a : it._id) !== null && _b !== void 0 ? _b : it.timestamp) !== null && _c !== void 0 ? _c : Date.now()).toString();
+                batch.set(coll.doc(id), mapLogItem(it), { merge: true });
+            });
+            await batch.commit();
+        }
+    }
+    catch (e) {
+        console.warn('Logs fetch failed (ignored):', e);
+    }
+    // 3) Quick template notes (optional, global)
+    try {
+        const notes = await oneIspGet(`/api/v2/setting/quick-template-note`);
+        if (Array.isArray(notes)) {
+            const batch = db.batch();
+            const coll = db.collection('config').doc('quick_notes').collection('items');
+            notes.slice(0, 100).forEach((it) => {
+                var _a, _b, _c;
+                const id = ((_c = (_b = (_a = it.id) !== null && _a !== void 0 ? _a : it._id) !== null && _b !== void 0 ? _b : it.title) !== null && _c !== void 0 ? _c : `${Date.now()}`).toString();
+                batch.set(coll.doc(id), mapQuickNote(it), { merge: true });
+            });
+            await batch.commit();
+        }
+    }
+    catch (e) {
+        console.warn('Notes fetch failed (ignored):', e);
+    }
+}
+// ===== v2 Callables (single request object) =====
+// First link + initial sync
+exports.linkAndSyncAccount = (0, https_1.onCall)(async (req) => {
+    var _a, _b, _c, _d, _e;
+    // Auth check
+    if (!req.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'Sign in required.');
+    }
+    const uid = req.auth.uid;
+    // Payload
+    const customerId = String((_b = (_a = req.data) === null || _a === void 0 ? void 0 : _a.customerId) !== null && _b !== void 0 ? _b : '').trim();
+    const accountNumber = ((_c = req.data) === null || _c === void 0 ? void 0 : _c.accountNumber)
+        ? String(req.data.accountNumber).trim()
+        : undefined;
+    const verificationCode = String((_e = (_d = req.data) === null || _d === void 0 ? void 0 : _d.verificationCode) !== null && _e !== void 0 ? _e : '').trim();
+    if (!customerId || !verificationCode) {
+        throw new https_1.HttpsError('invalid-argument', 'Missing customerId or verificationCode.');
+    }
+    await db.collection('links').doc(uid).set({ customerId, accountNumber, verified: true }, { merge: true });
+    await syncCustomer(uid, customerId, accountNumber);
+    return { ok: true };
+});
+// Manual refresh
+exports.refreshCustomerInfo = (0, https_1.onCall)(async (req) => {
+    var _a;
+    if (!req.auth) {
+        throw new https_1.HttpsError('unauthenticated', 'Sign in required.');
+    }
+    const uid = req.auth.uid;
+    const link = await db.collection('links').doc(uid).get();
+    if (!link.exists || !((_a = link.data()) === null || _a === void 0 ? void 0 : _a.verified)) {
+        throw new https_1.HttpsError('failed-precondition', 'Account not linked.');
+    }
+    const { customerId, accountNumber } = link.data();
+    await syncCustomer(uid, customerId, accountNumber);
+    return { ok: true };
+});
+//# sourceMappingURL=index.js.map
+

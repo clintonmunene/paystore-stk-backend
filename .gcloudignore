@@ -1,0 +1,5 @@
+﻿# minimal .gcloudignore — only whitelist the files we need
+*
+!package.json
+!index.js
+!.gcloudignore
